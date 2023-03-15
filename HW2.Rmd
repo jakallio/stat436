@@ -1,0 +1,85 @@
+---
+title: "hw2"
+output: html_document
+date: '2023-03-13'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(shiny)
+library(rsconnect)
+#/Users/jordankallio/Documents/stat436/hw2.Rmd
+#/Users/jordankallio/Documents/stat436/netflix_titles.csv
+```
+
+
+```{r}
+#reading in the dataset
+
+netflix <- read_csv("https://github.com/jakallio/stat436/blob/main/netflix_titles.csv?raw=true") %>%
+  
+#adding the 'age_group' variable to replace 'rating' (allows us to compare tv shows and movies more easily in terms of rating)
+  mutate(age_group = case_when(rating == "TV-MA" | rating == "R" | rating == "NC-17" ~ "adult", rating == "TV-14" | rating == "PG-13" ~ "teen", rating == "TV-Y" | rating == "TV-Y7" | rating == "TV-Y7 FV" | rating == "TV-G" | rating == "TV-PG" | rating == "G" | rating == "PG" ~ "child")) %>%
+
+#selecting only the columns that I want to include in the interactive visualization
+  select(title, type, director, cast, country, release_year, age_group, listed_in)
+```
+
+```{r}
+#defining an external function to use name, year range, and program types (whether movie or tv or both) inputs to filter the data
+find_samples <- function(df, name, years, programtypes) {
+  filtered <- df %>%
+    filter(grepl(name, director, ignore.case = TRUE) | grepl(name, cast, ignore.case = TRUE)) %>%
+    filter(release_year >= years[1] & release_year <= years[2])
+  if (length(programtypes) == 1) {
+    print(typeof(programtypes))
+    filtered <- filtered %>%
+      filter(filtered$type == programtypes)
+  }
+  return(filtered)
+}
+
+#defining another external function which generates a pie chart based off the proportion of target age groups including in the remaining rows post-filtering
+age_pieplot <- function(df) {
+  groups <- df %>%
+    group_by(age_group) %>%
+    summarize(count = n())
+  ggplot(groups, aes(x="", y=count, fill=age_group)) +
+    geom_bar(stat="identity", width=1) +
+    coord_polar("y", start=0)
+}
+
+#defining the user interface with a title, side subtitle describing the purpose of my app, a text input box for the name of directors/actors, an selection input for movies/tv/both, and a year range input
+ui <- fluidPage(
+   titlePanel("Big Names on Netflix"),
+   sidebarLayout(
+     sidebarPanel(),
+     mainPanel(
+       h4("Find out about the Netflix career of your favorite actor or director using the following filters!", align = "center")
+       )
+     ),
+   textInput("person", "Please enter the name of a director or actor", value = "", width = NULL, placeholder = NULL),
+   selectInput("movietv", "Please select one or both", c("Movie", "TV Show"), multiple=TRUE),
+   sliderInput("yrs", "Please select the years you wish to include", c(1925, 2021), min=1925, max=2021, sep=""),
+   plotOutput("piechart", width = 250, height = 250),
+   dataTableOutput("list")
+   
+ )
+ 
+#defining the server of my app, which calls my externally defined functions "find_samples" and "age_pieplot" to get a chart and a list output
+ server <- function(input, output) {
+   samples <- reactive({
+     find_samples(netflix, input$person, input$yrs, input$movietv)
+   })
+   output$piechart <- renderPlot(age_pieplot(samples()))
+   output$list <- renderDataTable(samples())
+ }
+ 
+#running my app
+shinyApp(ui, server)
+```
+
