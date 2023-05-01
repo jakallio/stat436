@@ -1,0 +1,83 @@
+---
+title: "hw4"
+output: html_document
+date: "2023-05-01"
+---
+```{r}
+library(tidyverse)
+library(shiny)
+library(dplyr)
+library(ggplot2)
+```
+
+```{r}
+#reading in fast food nutrition dataset; I uploaded it to Github so it is replicable
+foods <- read_csv("https://github.com/jakallio/stat436/raw/main/fastfood.csv")
+head(foods)
+
+#creating a named list of daily recommended values for adults and children over 4 years (found on FDA website)
+drv <- c(2000, 78, 20, 300, 275, 2300, 28, 50, 50)
+names(drv) <- c("calories", "total_fat", "sat_fat", "cholesterol", "total_carb", "sodium", "fiber", "protein", "sugar")
+```
+
+```{r}
+#constructing a function to filter dataset based on user inputs
+find_items <- function(df, food, store) {
+  filtered <- df %>%
+    filter(grepl(food, item, ignore.case = TRUE)) %>%
+    filter(restaurant %in% store)
+  return(filtered)
+}
+
+#defining another external function which generates a chart based off proportions of nutrients to their DRVs (daily limits)
+nutrition_plot <- function(df) {
+  #using only the top result of our user input search to generate the plot
+  top_row <- df %>%
+    filter(row_number() == 1)
+  
+  #using our previously defined named list "drv" to calculate percentages of Daily Recommended Values
+  top_row <- top_row %>%
+    mutate(calories = calories / drv["calories"], total_fat = total_fat / drv["total_fat"], sat_fat = sat_fat / drv["sat_fat"], cholesterol = cholesterol / drv["cholesterol"], total_carb = total_carb / drv["total_carb"], sodium = sodium / drv["sodium"], fiber = fiber / drv["fiber"], protein = protein / drv["protein"], sugar = sugar / drv["sugar"], .keep="used")
+  
+  #building a dataframe with these percentages so they can be used in a plot
+  percentages <- c(top_row$calories[1], top_row$total_fat[1], top_row$sat_fat[1], top_row$cholesterol[1], top_row$total_carb[1], top_row$sodium[1], top_row$fiber[1], top_row$protein[1], top_row$sugar[1])
+  plotdata <- data.frame(components, percentages)
+  
+  #plotting the percentages using geom_bar() and a y-axis scale of 0 to 1
+  ggplot(plotdata, aes(x=components, y=percentages)) +
+    geom_bar(stat="identity", aes(fill=components)) +
+    ylim(0, 1) +
+    ggtitle("Percentages of FDA Daily Recommended Values by Components") +
+    xlab("Nutritional Components") +
+    ylab("Percentage of DRV (in appropriate units, per single item)") +
+    theme(axis.text.x = element_text(angle = 90))
+}
+
+#defining the user interface with a title, side subtitle describing the purpose of my app, a text input box for the name of food items,  and a selection input for names of restaurants. The user interface also displays my filtered nutrition table as well as the percentages-of-DRV plot
+ui <- fluidPage(
+   titlePanel("Drive-Thru Nutrition"),
+   sidebarLayout(
+     sidebarPanel(),
+     mainPanel(
+       h4("Find out how healthy your fast food favorites really are!")
+       )
+     ),
+   selectInput("restaurant", "Please select the restaurant(s) you'd like to look at", c("Taco Bell", "Subway", "Burger King", "Mcdonalds", "Arbys"), multiple=TRUE),
+   textInput("item", "Please enter the name of a fast food item", value = "", width = NULL, placeholder = NULL),
+   plotOutput("nutrition", width = 400, height = 400),
+   dataTableOutput("list")
+   
+ )
+ 
+#defining the server of my app, which calls my externally defined functions "find_items" and "nutrition_plot" to get a chart and a list output
+server <- function(input, output) {
+   samples <- reactive({
+     find_items(foods, input$item, input$restaurant)
+   })
+   output$nutrition <- renderPlot(nutrition_plot(samples()))
+   output$list <- renderDataTable(samples())
+ }
+ 
+#running my app
+shinyApp(ui, server)
+```
